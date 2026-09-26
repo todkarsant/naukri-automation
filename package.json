@@ -1,0 +1,25 @@
+{
+  "name": "naukri-automation",
+  "version": "1.0.0",
+  "description": "Automated Naukri profile updates using GitHub Actions",
+  "main": "scripts/update-naukri.js",
+  "scripts": {
+    "update": "node scripts/update-naukri.js",
+    "test": "echo \"Tests not configured\" && exit 0"
+  },
+  "keywords": [
+    "naukri",
+    "automation",
+    "github-actions",
+    "job-portal"
+  ],
+  "author": "Santosh Todkar",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
