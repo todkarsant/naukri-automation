@@ -13,11 +13,7 @@ from playwright.sync_api import sync_playwright
 
 # Configuration - UPDATE THESE WITH YOUR CREDENTIALS
 NAUKRI_EMAIL = "todkarsant@gmail.com"  # Your Naukri email
-<<<<<<< HEAD
-NAUKRI_PASSWORD = "Acro,560043416216"  # Your Naukri password
-=======
 NAUKRI_PASSWORD = "YOUR_PASSWORD_HERE"  # Your Naukri password
->>>>>>> 993fe701c3c2813242878038d2ed4e7fb7806965
 HEADLINES_FILE = "cv-bank/headlines.txt"
 
 def log(message):
