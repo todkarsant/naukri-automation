@@ -14,9 +14,8 @@ if (!fs.existsSync(logsDir)) {
 
 function log(message) {
   const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}\n`;
-  console.log(logMessage);
-  fs.appendFileSync(path.join(logsDir, 'naukri-update.log'), logMessage);
+  console.log(`[${timestamp}] ${message}`);
+  fs.appendFileSync(path.join(logsDir, 'naukri-update.log'), `[${timestamp}] ${message}\n`);
 }
 
 async function updateNaukriProfile() {
@@ -28,140 +27,106 @@ async function updateNaukriProfile() {
   });
   
   const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    viewport: { width: 1920, height: 1080 }
   });
   
   const page = await context.newPage();
   
   try {
-    // STEP 1: LOGIN
+    // STEP 1: LOGIN - Naukri has 2 login page variants
     log('Going to Naukri login...');
-    await page.goto(NAUKRI_LOGIN_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(10000);
-    await page.screenshot({ path: path.join(logsDir, '01-login.png') });
+    await page.goto(NAUKRI_LOGIN_URL, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(8000);
+    await page.screenshot({ path: path.join(logsDir, '01-login.png'), fullPage: true });
     
     log('Filling credentials...');
     
-    // Get ALL inputs
-    const inputs = await page.$$eval('input', els => 
-      els.map((el, i) => ({
-        index: i,
-        type: el.type,
-        name: el.name,
-        id: el.id,
-        placeholder: el.placeholder
-      }))
-    );
-    
-    log(`Found ${inputs.length} inputs`);
-    
-    // Find email/username input
-    for (const input of inputs) {
-      const type = input.type || 'text';
-      const name = (input.name || '').toLowerCase();
-      const id = (input.id || '').toLowerCase();
-      const placeholder = (input.placeholder || '').toLowerCase();
-      
-      if ((type === 'text' || type === 'email' || type === '') &&
-          (name.includes('user') || name.includes('email') || name.includes('login') ||
-           id.includes('user') || id.includes('email') ||
-           placeholder.includes('email'))) {
-        await page.locator(`input:nth-of-type(${input.index + 1})`).fill(EMAIL);
-        log(`Filled email in input[${input.index}]: name=${input.name}, id=${input.id}`);
-        break;
+    // Variant 1: usernameField (most common)
+    try {
+      const usernameField = page.locator('#usernameField, input[name="USERNAME"], input[id="emailTxt"]');
+      if (await usernameField.isVisible()) {
+        await usernameField.fill(EMAIL);
+        log('Filled email in usernameField');
       }
+    } catch (e) {
+      log('Variant 1 username field not found');
     }
     
-    // Find password input
-    for (const input of inputs) {
-      if (input.type === 'password') {
-        await page.locator(`input:nth-of-type(${input.index + 1})`).fill(PASSWORD);
-        log(`Filled password in input[${input.index}]`);
-        break;
-      }
-    }
-    
-    await page.screenshot({ path: path.join(logsDir, '02-filled.png') });
-    
-    // Get ALL buttons and clickable elements
-    const buttons = await page.$$eval('button, input[type="submit"], a.button, [role="button"]', els =>
-      els.map((el, i) => ({
-        index: i,
-        tag: el.tagName,
-        type: el.type,
-        text: (el.textContent || '').trim().toLowerCase(),
-        value: (el.value || '').toLowerCase()
-      }))
-    );
-    
-    log(`Found ${buttons.length} buttons`);
-    
-    // Find login button
-    for (const btn of buttons) {
-      if (btn.text.includes('login') || btn.text.includes('sign in') || btn.type === 'submit') {
-        try {
-          await page.locator(`button:nth-of-type(${btn.index + 1}), input[type="submit"]:nth-of-type(${btn.index + 1})`).click();
-          log(`Clicked button[${btn.index}]: ${btn.text}`);
-          break;
-        } catch (e) {
-          log(`Failed to click button[${btn.index}]: ${e.message}`);
+    // Variant 2: Try generic text input if above fails
+    try {
+      const anyTextInput = page.locator('input[type="text"]').first();
+      if (await anyTextInput.isVisible()) {
+        const value = await anyTextInput.inputValue();
+        if (!value) {
+          await anyTextInput.fill(EMAIL);
+          log('Filled email in first text input');
         }
       }
+    } catch (e) {
+      log('No text input found');
     }
     
-    await page.waitForTimeout(12000);
-    await page.screenshot({ path: path.join(logsDir, '03-after-login.png') });
+    // Password field - common selectors
+    try {
+      const passwordField = page.locator('#pwd1, input[name="PASSWORD"], input[type="password"]').first();
+      if (await passwordField.isVisible()) {
+        await passwordField.fill(PASSWORD);
+        log('Filled password');
+      }
+    } catch (e) {
+      log('Password field not found');
+    }
+    
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: path.join(logsDir, '02-filled.png'), fullPage: true });
+    
+    // Click login button
+    log('Clicking login...');
+    try {
+      const loginBtn = page.locator('button[type="submit"], input[type="submit"], .btn-primary, .login-btn').first();
+      if (await loginBtn.isVisible()) {
+        await loginBtn.click();
+        log('Clicked login button');
+      }
+    } catch (e) {
+      log('Login button click failed');
+    }
+    
+    await page.waitForTimeout(15000);
+    await page.screenshot({ path: path.join(logsDir, '03-after-login.png'), fullPage: true });
     
     // STEP 2: PROFILE
     log('Going to profile...');
-    await page.goto(NAUKRI_PROFILE_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(12000);
-    await page.screenshot({ path: path.join(logsDir, '04-profile.png') });
+    await page.goto(NAUKRI_PROFILE_URL, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(10000);
+    await page.screenshot({ path: path.join(logsDir, '04-profile.png'), fullPage: true });
     
     // STEP 3: HEADLINE
     log('Updating headline...');
     try {
       const headlinesPath = path.join(__dirname, '..', 'cv-bank', 'headlines.txt');
       let headlines = ['Software Builder'];
-      
       if (fs.existsSync(headlinesPath)) {
-        headlines = fs.readFileSync(headlinesPath, 'utf-8')
-          .split('\n').filter(l => l.trim());
+        headlines = fs.readFileSync(headlinesPath, 'utf-8').split('\n').filter(l => l.trim());
       }
-      
       const headline = headlines[Math.floor(Math.random() * headlines.length)];
       log(`Selected: ${headline}`);
       
-      // Get all inputs on profile page
-      const profileInputs = await page.$$eval('input', els =>
-        els.map((el, i) => ({
-          index: i,
-          name: (el.name || '').toLowerCase(),
-          id: (el.id || '').toLowerCase(),
-          placeholder: (el.placeholder || '').toLowerCase()
-        }))
-      );
-      
-      for (const inp of profileInputs) {
-        if (inp.name.includes('headline') || inp.id.includes('headline') || inp.placeholder.includes('headline')) {
-          await page.locator(`input:nth-of-type(${inp.index + 1})`).fill(headline);
-          log(`Filled headline in input[${inp.index}]`);
-          
-          // Click save
-          const saveBtns = await page.$$eval('button, input[type="submit"]', els =>
-            els.map((el, i) => ({ index: i, text: (el.textContent || '').toLowerCase() }))
-          );
-          
-          for (const sb of saveBtns) {
-            if (sb.text.includes('save') || sb.text.includes('update')) {
-              await page.locator(`button:nth-of-type(${sb.index + 1})`).click();
-              log('Saved headline');
-              break;
-            }
-          }
-          break;
+      // Look for headline input
+      const headlineInput = page.locator('input[name*="headline" i], input[id*="headline" i], input[placeholder*="headline" i]').first();
+      if (await headlineInput.isVisible()) {
+        await headlineInput.fill(headline);
+        log('Filled headline');
+        
+        // Click save
+        const saveBtn = page.locator('button:has-text("Save"), button:has-text("Update"), input[value="Save"], input[value="Update"]').first();
+        if (await saveBtn.isVisible()) {
+          await saveBtn.click();
+          log('Saved headline');
+          await page.waitForTimeout(3000);
         }
+      } else {
+        log('Headline input not found');
       }
     } catch (e) {
       log(`Headline error: ${e.message}`);
@@ -170,30 +135,23 @@ async function updateNaukriProfile() {
     // STEP 4: CV
     log('Updating CV...');
     try {
-      const links = await page.$$eval('a', els =>
-        els.map((el, i) => ({ index: i, text: (el.textContent || '').toLowerCase() }))
-      );
-      
-      for (const link of links) {
-        if (link.text.includes('cv') || link.text.includes('resume')) {
-          await page.locator(`a:nth-of-type(${link.index + 1})`).click();
-          log('Clicked CV link');
-          await page.waitForTimeout(6000);
-          break;
-        }
+      const cvLink = page.locator('a:has-text("CV"), a:has-text("Resume"), a:has-text("Upload")').first();
+      if (await cvLink.isVisible()) {
+        await cvLink.click();
+        log('Clicked CV link');
+        await page.waitForTimeout(5000);
+        await page.screenshot({ path: path.join(logsDir, '05-cv.png'), fullPage: true });
       }
-      
-      await page.screenshot({ path: path.join(logsDir, '05-cv.png') });
     } catch (e) {
       log(`CV error: ${e.message}`);
     }
     
-    await page.screenshot({ path: path.join(logsDir, '06-final.png') });
+    await page.screenshot({ path: path.join(logsDir, '06-final.png'), fullPage: true });
     log('Done!');
     
   } catch (error) {
     log(`ERROR: ${error.message}`);
-    await page.screenshot({ path: path.join(logsDir, 'error.png') });
+    await page.screenshot({ path: path.join(logsDir, 'error.png'), fullPage: true });
     throw error;
   } finally {
     await browser.close();
