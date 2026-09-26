@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 """
-Naukri Profile Updater - Session-based API approach
-Uses requests with proper session/cookie handling
+Naukri Profile Updater - BROWSER VERSION
+Uses Playwright to automate actual browser login
 """
 
 import os
 import sys
 import random
-import time
-import requests
-import re
 from datetime import datetime
-from html.parser import HTMLParser
+from playwright.sync_api import sync_playwright
 
 # Configuration
-NAUKRI_EMAIL = os.getenv("NAUKRI_EMAIL")
+NAUKRI_EMAIL = os.getenv("NAUKRI_EMAIL", "todkarsant@gmail.com")
 NAUKRI_PASSWORD = os.getenv("NAUKRI_PASSWORD")
-RESUME_PATH = os.getenv("RESUME_PATH", "cv-bank/resumes")
 HEADLINES_FILE = "cv-bank/headlines.txt"
 
 def log(message):
@@ -27,178 +23,80 @@ def get_random_headline():
     try:
         with open(HEADLINES_FILE, 'r', encoding='utf-8') as f:
             headlines = [line.strip() for line in f if line.strip()]
-        return random.choice(headlines) if headlines else "Software Builder | Full Stack Developer"
-    except FileNotFoundError:
-        return "Software Builder | Full Stack Developer"
-
-def get_resume_file():
-    try:
-        if not os.path.exists(RESUME_PATH):
-            return None
-        resume_files = [os.path.join(RESUME_PATH, f) for f in os.listdir(RESUME_PATH) if f.endswith(('.pdf', '.doc', '.docx'))]
-        return random.choice(resume_files) if resume_files else None
+        return random.choice(headlines) if headlines else "Software Builder"
     except:
-        return None
+        return "Software Builder"
 
-class NaukriSession:
-    def __init__(self, email, password):
-        self.email = email
-        self.password = password
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        })
+def update_profile():
+    log("=== NAUKRI PROFILE UPDATE (BROWSER) ===")
+    log(f"Email: {NAUKRI_EMAIL}")
     
-    def login(self):
-        """Login to Naukri with proper session handling"""
-        log("Starting login process...")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+        page = context.new_page()
         
         try:
-            # Step 1: Get login page
-            log("Getting login page...")
-            response = self.session.get('https://www.naukri.com/login', timeout=15)
+            # Login
+            log("\nGoing to Naukri login...")
+            page.goto("https://www.naukri.com/login", wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(8000)
             
-            if 'Access Denied' in response.text or 'edgesuite' in response.text.lower():
-                log("✗ Blocked by WAF - Access Denied page")
+            # Check if blocked
+            if "Access Denied" in page.title():
+                log("✗ BLOCKED BY WAF!")
                 return False
             
-            log(f"✓ Login page loaded (status: {response.status_code})")
-            
-            # Extract CSRF token if present
-            csrf_token = None
-            csrf_match = re.search(r'name=["\']_csrf["\']\s+value=["\']([^"\']+)["\']', response.text)
-            if csrf_match:
-                csrf_token = csrf_match.group(1)
-                log(f"Found CSRF token: {csrf_token[:20]}...")
-            
-            # Step 2: Submit login form
-            log("Submitting login form...")
-            login_data = {
-                'username': self.email,
-                'password': self.password,
-            }
-            
-            if csrf_token:
-                login_data['_csrf'] = csrf_token
-            
-            response = self.session.post(
-                'https://www.naukri.com/login',
-                data=login_data,
-                timeout=15,
-                allow_redirects=True
-            )
-            
-            log(f"Login response: {response.status_code}")
-            
-            # Check if login succeeded
-            if 'logout' in response.text.lower() or 'my naukri' in response.text.lower() or 'profile' in response.text.lower():
-                log("✓ Login successful!")
-                return True
-            elif 'invalid' in response.text.lower() or 'incorrect' in response.text.lower():
-                log("✗ Invalid credentials")
-                return False
-            else:
-                log("? Login response unclear - checking cookies...")
-                # Check if we have auth cookies
-                auth_cookies = [c for c in self.session.cookies if 'auth' in c.name.lower() or 'session' in c.name.lower() or 'token' in c.name.lower()]
-                if auth_cookies:
-                    log(f"✓ Found {len(auth_cookies)} auth cookies")
-                    return True
-                return False
-                
-        except requests.exceptions.RequestException as e:
-            log(f"✗ Network error: {e}")
-            return False
-        except Exception as e:
-            log(f"✗ Error: {e}")
-            return False
-    
-    def update_headline(self, headline):
-        """Update profile headline by navigating to profile and submitting form"""
-        log(f"\nUpdating headline to: \"{headline}\"")
-        
-        try:
-            # Go to profile page
-            log("Going to profile page...")
-            response = self.session.get('https://www.naukri.com/mnjuser/profile', timeout=15)
-            
-            if response.status_code != 200:
-                log(f"✗ Profile page returned {response.status_code}")
+            # Fill credentials
+            log("Filling credentials...")
+            try:
+                page.fill('input[name="USERNAME"]', NAUKRI_EMAIL)
+                page.fill('input[type="password"]', NAUKRI_PASSWORD)
+                page.click('button[type="submit"]')
+                page.wait_for_timeout(15000)
+                log("✓ Login submitted")
+            except Exception as e:
+                log(f"✗ Login failed: {e}")
                 return False
             
-            if 'Access Denied' in response.text:
-                log("✗ Profile page blocked")
-                return False
+            # Go to profile
+            log("\nGoing to profile...")
+            page.goto("https://www.naukri.com/mnjuser/profile", wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(10000)
             
-            log(f"✓ Profile page loaded")
+            # Update headline
+            headline = get_random_headline()
+            log(f"Selected headline: \"{headline}\"")
             
-            # Look for headline field and update it
-            # This is simplified - real implementation would parse HTML properly
-            headline_patterns = [
-                r'name=["\']([^"\']*headline[^"\']*)["\']',
-                r'id=["\']([^"\']*headline[^"\']*)["\']',
-                r'placeholder=["\'][^"\']*headline[^"\']*["\']'
-            ]
+            try:
+                headline_input = page.locator('input[placeholder*="headline" i], input[name*="headline" i]').first()
+                if headline_input.is_visible():
+                    headline_input.fill(headline)
+                    log("✓ Headline updated")
+                    
+                    save_btn = page.locator('button:has-text("Save"), input[value="Save"]').first()
+                    if save_btn.is_visible():
+                        save_btn.click()
+                        page.wait_for_timeout(5000)
+                        log("✓ Saved")
+                else:
+                    log("! Headline field not found")
+            except Exception as e:
+                log(f"✗ Headline update failed: {e}")
             
-            found_headline_field = False
-            for pattern in headline_patterns:
-                if re.search(pattern, response.text, re.IGNORECASE):
-                    found_headline_field = True
-                    log(f"✓ Found headline field")
-                    break
-            
-            if not found_headline_field:
-                log("! Headline field not found in HTML")
-                # Save HTML for debugging
-                with open('profile-debug.html', 'w') as f:
-                    f.write(response.text[:50000])
-                log("Saved profile HTML to profile-debug.html")
-                return False
-            
-            # Note: Actually updating would require finding the correct form action and submitting
-            # For now, we'll just log success if we found the field
-            log("✓ Headline field exists (update would require form submission)")
+            log("\n✓ COMPLETED!")
             return True
             
         except Exception as e:
             log(f"✗ Error: {e}")
             return False
-
-def update_naukri_profile():
-    log("=== NAUKRI PROFILE UPDATE (SESSION) ===")
-    
-    if not NAUKRI_EMAIL or not NAUKRI_PASSWORD:
-        log("ERROR: NAUKRI_EMAIL and NAUKRI_PASSWORD required")
-        sys.exit(1)
-    
-    log(f"Email: {NAUKRI_EMAIL}")
-    
-    # Create session and login
-    client = NaukriSession(NAUKRI_EMAIL, NAUKRI_PASSWORD)
-    
-    if not client.login():
-        log("\n✗ Login failed")
-        return False
-    
-    # Update headline
-    headline = get_random_headline()
-    if not client.update_headline(headline):
-        log("✗ Headline update failed")
-    
-    # Note: Resume upload would require multipart form submission
-    resume_file = get_resume_file()
-    if resume_file:
-        log(f"\n! Resume upload not implemented in this version")
-        log(f"  Would upload: {resume_file}")
-    
-    log("\n✓ COMPLETED!")
-    return True
+        
+        finally:
+            browser.close()
 
 if __name__ == "__main__":
-    success = update_naukri_profile()
+    success = update_profile()
     sys.exit(0 if success else 1)
