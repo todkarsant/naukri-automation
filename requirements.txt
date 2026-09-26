@@ -1,2 +1,4 @@
 # Naukri API Updater Dependencies
 requests>=2.31.0
+playwright
+requests
