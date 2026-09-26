@@ -13,7 +13,11 @@ from playwright.sync_api import sync_playwright
 
 # Configuration - UPDATE THESE WITH YOUR CREDENTIALS
 NAUKRI_EMAIL = "todkarsant@gmail.com"  # Your Naukri email
+<<<<<<< HEAD
 NAUKRI_PASSWORD = "Acro,560043416216"  # Your Naukri password
+=======
+NAUKRI_PASSWORD = "YOUR_PASSWORD_HERE"  # Your Naukri password
+>>>>>>> 993fe701c3c2813242878038d2ed4e7fb7806965
 HEADLINES_FILE = "cv-bank/headlines.txt"
 
 def log(message):
@@ -44,6 +48,7 @@ def update_profile():
         try:
             # Login
             log("\nGoing to Naukri login...")
+<<<<<<< HEAD
             try:
                 page.goto("https://www.naukri.com/login", wait_until="domcontentloaded", timeout=60000)
                 page.wait_for_timeout(15000)  # Wait longer for page to fully load
@@ -51,6 +56,10 @@ def update_profile():
                 log(f"✗ Login page timeout: {e}")
                 page.screenshot(path="login-timeout.png")
                 return False
+=======
+            page.goto("https://www.naukri.com/login", wait_until="networkidle")
+            page.wait_for_timeout(5000)
+>>>>>>> 993fe701c3c2813242878038d2ed4e7fb7806965
             
             # Fill credentials
             log("Filling credentials...")
