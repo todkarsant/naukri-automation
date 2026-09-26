@@ -1,5 +1,2 @@
-# NopeRi - Naukri API Client
-git+https://github.com/Traverser25/NopeRi.git
-
-# Additional dependencies
+# Naukri API Updater Dependencies
 requests>=2.31.0
