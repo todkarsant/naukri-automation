@@ -33,97 +33,109 @@ async function updateNaukriProfile() {
   const page = await context.newPage();
   
   try {
-    // ========== STEP 1: LOGIN ==========
-    log('=== STEP 1: LOGIN ===');
+    // ========== LOGIN ==========
+    log('=== LOGIN ===');
     await page.goto(NAUKRI_LOGIN_URL, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(8000);
-    await page.screenshot({ path: path.join(logsDir, '01-login.png'), fullPage: true });
+    await page.waitForTimeout(10000);
     
-    log('Filling credentials...');
+    // Fill credentials using multiple methods
+    const usernameFields = await page.$$('input[type="text"], input[type="email"], input[name="USERNAME"], #usernameField');
+    log(`Found ${usernameFields.length} potential username fields`);
     
-    // Try multiple selectors for username
-    const usernameSelectors = ['#usernameField', 'input[name="USERNAME"]', 'input[id="emailTxt"]', 'input[type="text"]'];
-    for (const selector of usernameSelectors) {
+    for (const field of usernameFields) {
       try {
-        const field = page.locator(selector).first();
-        if (await field.isVisible()) {
-          await field.fill(EMAIL);
-          log(`✓ Filled email using: ${selector}`);
-          break;
-        }
-      } catch (e) {
-        log(`✗ ${selector} failed`);
-      }
+        await field.fill(EMAIL);
+        log('✓ Filled email');
+        break;
+      } catch (e) {}
     }
     
-    // Password field
-    const passwordSelectors = ['#pwd1', 'input[name="PASSWORD"]', 'input[type="password"]'];
-    for (const selector of passwordSelectors) {
+    const passwordFields = await page.$$('input[type="password"], #pwd1, input[name="PASSWORD"]');
+    log(`Found ${passwordFields.length} password fields`);
+    
+    for (const field of passwordFields) {
       try {
-        const field = page.locator(selector).first();
-        if (await field.isVisible()) {
-          await field.fill(PASSWORD);
-          log(`✓ Filled password using: ${selector}`);
-          break;
-        }
-      } catch (e) {
-        log(`✗ ${selector} failed`);
-      }
+        await field.fill(PASSWORD);
+        log('✓ Filled password');
+        break;
+      } catch (e) {}
     }
     
     await page.waitForTimeout(3000);
     
-    // Click login
-    try {
-      const loginBtn = page.locator('button[type="submit"], input[type="submit"], .btn-primary').first();
-      if (await loginBtn.isVisible()) {
-        await loginBtn.click();
+    // Click any submit button
+    const submitButtons = await page.$$('button[type="submit"], input[type="submit"], .btn-primary, button.login-btn');
+    log(`Found ${submitButtons.length} submit buttons`);
+    
+    for (const btn of submitButtons) {
+      try {
+        await btn.click();
         log('✓ Clicked login button');
-      }
-    } catch (e) {
-      log('✗ Login button click failed');
+        break;
+      } catch (e) {}
     }
     
     await page.waitForTimeout(15000);
     await page.screenshot({ path: path.join(logsDir, '02-after-login.png'), fullPage: true });
     
-    // ========== STEP 2: GO TO EDIT PROFILE ==========
-    log('\n=== STEP 2: EDIT PROFILE ===');
+    // ========== GO TO PROFILE ==========
+    log('\n=== PROFILE ===');
+    await page.goto(NAUKRI_PROFILE_URL, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(15000);
     
-    // Naukri profile needs "Edit Profile" or "View and Update"
-    const editSelectors = [
-      'a:has-text("Edit Profile")',
-      'a:has-text("View and Update")', 
-      'a:has-text("Update Profile")',
-      'button:has-text("Edit")',
-      'a[href*="edit"]',
-      'a[href*="update"]'
-    ];
+    // Save page HTML for debugging
+    const profileHTML = await page.content();
+    fs.writeFileSync(path.join(logsDir, 'profile-page.html'), profileHTML);
+    log('✓ Saved profile page HTML');
     
-    let editClicked = false;
-    for (const selector of editSelectors) {
+    await page.screenshot({ path: path.join(logsDir, '03-profile.png'), fullPage: true });
+    
+    // Find ALL links and buttons on the page
+    const allLinks = await page.$$eval('a', els => els.map(el => ({
+      text: (el.textContent || '').trim().substring(0, 50),
+      href: el.href || '',
+      class: el.className || ''
+    })).filter(l => l.text));
+    
+    const allButtons = await page.$$eval('button, input[type="submit"], input[type="button"]', els => els.map(el => ({
+      text: (el.textContent || el.value || '').trim().substring(0, 50),
+      type: el.type || '',
+      class: el.className || ''
+    })).filter(b => b.text));
+    
+    log(`Found ${allLinks.length} links with text`);
+    log(`Found ${allButtons.length} buttons with text`);
+    
+    // Log links that might be edit/profile related
+    const editLinks = allLinks.filter(l => 
+      l.text.toLowerCase().includes('edit') || 
+      l.text.toLowerCase().includes('update') ||
+      l.text.toLowerCase().includes('profile') ||
+      l.href.includes('edit') ||
+      l.href.includes('update')
+    );
+    log(`Potential edit links: ${editLinks.length}`);
+    editLinks.forEach(l => log(`  - "${l.text}" -> ${l.href.substring(0, 80)}`));
+    
+    // Click first edit/update link if found
+    if (editLinks.length > 0) {
+      const editLink = page.locator('a').filter({ hasText: /edit|update/i }).first();
       try {
-        const editBtn = page.locator(selector).first();
-        if (await editBtn.isVisible()) {
-          await editBtn.click();
-          log(`✓ Clicked edit using: ${selector}`);
-          editClicked = true;
-          await page.waitForTimeout(5000);
-          break;
-        }
+        await editLink.click();
+        log('✓ Clicked edit link');
+        await page.waitForTimeout(8000);
+        await page.screenshot({ path: path.join(logsDir, '04-after-edit-click.png'), fullPage: true });
+        
+        // Save HTML after clicking edit
+        const editHTML = await page.content();
+        fs.writeFileSync(path.join(logsDir, 'edit-page.html'), editHTML);
       } catch (e) {
-        log(`✗ ${selector} failed`);
+        log(`✗ Click failed: ${e.message}`);
       }
     }
     
-    if (!editClicked) {
-      log('! No edit button found, continuing to profile page anyway');
-    }
-    
-    await page.screenshot({ path: path.join(logsDir, '03-edit-profile.png'), fullPage: true });
-    
-    // ========== STEP 3: UPDATE HEADLINE ==========
-    log('\n=== STEP 3: RESUME HEADLINE ===');
+    // ========== HEADLINE ==========
+    log('\n=== HEADLINE ===');
     
     const headlinesPath = path.join(__dirname, '..', 'cv-bank', 'headlines.txt');
     let headlines = ['Software Builder | Full Stack Developer'];
@@ -131,123 +143,94 @@ async function updateNaukriProfile() {
       headlines = fs.readFileSync(headlinesPath, 'utf-8').split('\n').filter(l => l.trim());
     }
     const headline = headlines[Math.floor(Math.random() * headlines.length)];
-    log(`Selected headline: ${headline}`);
+    log(`Selected: "${headline}"`);
     
-    // Find and click headline section to expand it
-    const headlineSectionSelectors = [
-      'div:has-text("Resume Headline")',
-      'label:has-text("Resume Headline")',
-      'span:has-text("Resume Headline")',
-      'h3:has-text("Headline")',
-      'a:has-text("Resume Headline")'
-    ];
+    // Find ALL inputs on the page
+    const allInputs = await page.$$eval('input, textarea', els => els.map((el, i) => ({
+      index: i,
+      type: el.type || 'text',
+      name: el.name || '',
+      id: el.id || '',
+      placeholder: el.placeholder || '',
+      value: (el.value || '').substring(0, 30)
+    })));
     
-    for (const selector of headlineSectionSelectors) {
+    log(`Found ${allInputs.length} total inputs`);
+    
+    // Look for headline-related inputs
+    const headlineInputs = allInputs.filter(inp => 
+      inp.name.toLowerCase().includes('headline') ||
+      inp.id.toLowerCase().includes('headline') ||
+      inp.placeholder.toLowerCase().includes('headline')
+    );
+    
+    log(`Found ${headlineInputs.length} headline inputs`);
+    headlineInputs.forEach(inp => log(`  - idx:${inp.index} name:"${inp.name}" id:"${inp.id}"`));
+    
+    if (headlineInputs.length > 0) {
+      const targetInput = headlineInputs[0];
       try {
-        const section = page.locator(selector).first();
-        if (await section.isVisible()) {
-          await section.click();
-          log(`✓ Clicked headline section: ${selector}`);
-          await page.waitForTimeout(2000);
-          break;
-        }
-      } catch (e) {
-        log(`✗ ${selector} failed`);
-      }
-    }
-    
-    // Now fill the headline input
-    const headlineInputSelectors = [
-      'input[name*="headline" i]',
-      'input[id*="headline" i]', 
-      'input[placeholder*="headline" i]',
-      'textarea[name*="headline" i]',
-      'textarea[id*="headline" i]'
-    ];
-    
-    for (const selector of headlineInputSelectors) {
-      try {
-        const input = page.locator(selector).first();
-        if (await input.isVisible()) {
-          await input.fill(headline);
-          log(`✓ Filled headline using: ${selector}`);
-          
-          // Look for save/update button near the input
-          const saveBtn = page.locator('button:has-text("Save"), input[value="Save"], button:has-text("Update"), input[value="Update"]').first();
-          if (await saveBtn.isVisible()) {
-            await saveBtn.click();
-            log('✓ Saved headline');
-            await page.waitForTimeout(5000);
-          }
-          break;
-        }
-      } catch (e) {
-        log(`✗ ${selector} failed`);
-      }
-    }
-    
-    await page.screenshot({ path: path.join(logsDir, '04-headline.png'), fullPage: true });
-    
-    // ========== STEP 4: CV BANK ==========
-    log('\n=== STEP 4: CV BANK ===');
-    
-    // Look for CV/Resume section
-    const cvSelectors = [
-      'a:has-text("CV")',
-      'a:has-text("Resume")',
-      'a:has-text("Upload")',
-      'a:has-text("CV Bank")',
-      'button:has-text("CV")',
-      'div:has-text("CV")'
-    ];
-    
-    for (const selector of cvSelectors) {
-      try {
-        const cvLink = page.locator(selector).first();
-        if (await cvLink.isVisible()) {
-          await cvLink.click();
-          log(`✓ Clicked CV using: ${selector}`);
+        await page.locator(`input:nth-of-type(${targetInput.index + 1}), textarea:nth-of-type(${targetInput.index + 1})`).fill(headline);
+        log('✓ Filled headline');
+        
+        // Click any save button
+        const saveBtns = await page.$$('button:has-text("Save"), input[value="Save"], button:has-text("Update")');
+        if (saveBtns.length > 0) {
+          await saveBtns[0].click();
+          log('✓ Clicked save');
           await page.waitForTimeout(5000);
-          break;
         }
       } catch (e) {
-        log(`✗ ${selector} failed`);
+        log(`✗ Fill failed: ${e.message}`);
       }
     }
     
-    await page.screenshot({ path: path.join(logsDir, '05-cv-section.png'), fullPage: true });
+    await page.screenshot({ path: path.join(logsDir, '05-after-headline.png'), fullPage: true });
     
-    // Look for CV Bank radio buttons or checkboxes
-    const cvRadioSelectors = [
-      'input[type="radio"]',
-      'input[type="checkbox"]'
-    ];
+    // ========== CV BANK ==========
+    log('\n=== CV BANK ===');
     
-    for (const selector of cvRadioSelectors) {
+    // Look for CV-related elements
+    const cvLinks = allLinks.filter(l => 
+      l.text.toLowerCase().includes('cv') || 
+      l.text.toLowerCase().includes('resume') ||
+      l.text.toLowerCase().includes('upload')
+    );
+    log(`Found ${cvLinks.length} CV-related links`);
+    cvLinks.forEach(l => log(`  - "${l.text}"`));
+    
+    if (cvLinks.length > 0) {
       try {
-        const radios = page.locator(selector);
-        const count = await radios.count();
-        if (count > 0) {
-          const randomIdx = Math.floor(Math.random() * count);
-          await radios.nth(randomIdx).check();
-          log(`✓ Selected CV option ${randomIdx + 1} of ${count}`);
+        const cvLink = page.locator('a').filter({ hasText: /cv|resume|upload/i }).first();
+        await cvLink.click();
+        log('✓ Clicked CV link');
+        await page.waitForTimeout(8000);
+        await page.screenshot({ path: path.join(logsDir, '06-cv-section.png'), fullPage: true });
+        
+        // Look for radio buttons in CV section
+        const radios = await page.$$('input[type="radio"], input[type="checkbox"]');
+        log(`Found ${radios.length} radio/checkbox inputs`);
+        
+        if (radios.length > 0) {
+          const randomIdx = Math.floor(Math.random() * radios.length);
+          await radios[randomIdx].check();
+          log(`✓ Selected option ${randomIdx + 1}`);
           
           // Save
-          const saveBtn = page.locator('button:has-text("Save"), input[value="Save"], button:has-text("Update")').first();
-          if (await saveBtn.isVisible()) {
-            await saveBtn.click();
+          const saveBtns = await page.$$('button:has-text("Save"), input[value="Save"]');
+          if (saveBtns.length > 0) {
+            await saveBtns[0].click();
             log('✓ Saved CV selection');
             await page.waitForTimeout(5000);
           }
-          break;
         }
       } catch (e) {
-        log(`✗ CV radio failed: ${e.message}`);
+        log(`✗ CV update failed: ${e.message}`);
       }
     }
     
-    await page.screenshot({ path: path.join(logsDir, '06-final.png'), fullPage: true });
-    log('\n✓ Update completed!');
+    await page.screenshot({ path: path.join(logsDir, '07-final.png'), fullPage: true });
+    log('\n✓ Done!');
     
   } catch (error) {
     log(`\n✗ ERROR: ${error.message}`);
