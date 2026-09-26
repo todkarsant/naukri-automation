@@ -1,4 +1,4 @@
-# Naukri API Updater Dependencies
-requests>=2.31.0
+# Naukri Automation - All Dependencies
 playwright
 requests
+flask
