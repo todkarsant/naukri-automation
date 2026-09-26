@@ -44,7 +44,6 @@ def update_profile():
         try:
             # Login
             log("\nGoing to Naukri login...")
-<<<<<<< HEAD
             try:
                 page.goto("https://www.naukri.com/login", wait_until="domcontentloaded", timeout=60000)
                 page.wait_for_timeout(15000)  # Wait longer for page to fully load
@@ -52,10 +51,8 @@ def update_profile():
                 log(f"✗ Login page timeout: {e}")
                 page.screenshot(path="login-timeout.png")
                 return False
-=======
             page.goto("https://www.naukri.com/login", wait_until="networkidle")
             page.wait_for_timeout(5000)
->>>>>>> 993fe701c3c2813242878038d2ed4e7fb7806965
             
             # Fill credentials
             log("Filling credentials...")
