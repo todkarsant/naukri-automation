@@ -44,7 +44,7 @@ async function updateNaukriProfile() {
     // Step 1: Login to Naukri
     log('Navigating to Naukri login page...');
     await page.goto(NAUKRI_LOGIN_URL, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(3000); // Wait for page to fully load
+    await page.waitForTimeout(5000); // Wait for page to fully load
     
     // Take screenshot for debugging
     await page.screenshot({ path: path.join(logsDir, '01-login-page.png') });
@@ -52,33 +52,57 @@ async function updateNaukriProfile() {
     // Find and fill login form
     log('Attempting to login...');
     
-    // Try to find email input
-    const emailInput = page.locator('input[type="email"], input[name="email"], input[id*="email"], input[placeholder*="email" i]').first();
+    // Try to find email/username input - Naukri uses "username" for email
+    const emailInput = page.locator('input[name="username"], input[type="email"], input[id*="email"], input[placeholder*="Email" i], input[placeholder*="email" i]').first();
     if (await emailInput.isVisible()) {
       await emailInput.fill(EMAIL);
       log('Email entered');
     } else {
-      log('Email input not found, trying alternative selectors');
-      // Try common Naukri selectors
-      await page.fill('input[name="username"]', EMAIL).catch(() => {});
+      log('Email input not found, trying all text inputs');
+      // Fallback: try filling any visible text input
+      const firstTextInput = page.locator('input[type="text"], input[type="email"]').first();
+      if (await firstTextInput.isVisible()) {
+        await firstTextInput.fill(EMAIL);
+        log('Email entered in first text input');
+      }
     }
     
     // Find password input
-    const passwordInput = page.locator('input[type="password"]').first();
+    const passwordInput = page.locator('input[type="password"]', { hasText: /password/i }).first();
     if (await passwordInput.isVisible()) {
       await passwordInput.fill(PASSWORD);
       log('Password entered');
+    } else {
+      // Fallback
+      const anyPasswordInput = page.locator('input[type="password"]').first();
+      if (await anyPasswordInput.isVisible()) {
+        await anyPasswordInput.fill(PASSWORD);
+        log('Password entered in first password input');
+      }
     }
     
     // Take screenshot before login
     await page.screenshot({ path: path.join(logsDir, '02-before-login.png') });
     
-    // Click login button
-    const loginButton = page.locator('button[type="submit"], input[type="submit"], button:contains("Login"), button:contains("Sign In")').first();
+    // Click login button - use proper Playwright syntax
+    log('Looking for login button...');
+    const loginButton = page.locator('button[type="submit"], input[type="submit"], button[value*="Login" i], button[value*="Sign In" i], a:has-text("Login"), a:has-text("Sign In")').first();
+    
     if (await loginButton.isVisible()) {
       await loginButton.click();
       log('Login button clicked');
-      await page.waitForTimeout(5000); // Wait for login to process
+      await page.waitForTimeout(8000); // Wait longer for login to process
+    } else {
+      // Try alternative: look for buttons with text
+      const altLoginButton = page.getByRole('button', { name: /login|sign in|submit/i }).first();
+      if (await altLoginButton.isVisible()) {
+        await altLoginButton.click();
+        log('Alternative login button clicked');
+        await page.waitForTimeout(8000);
+      } else {
+        log('Login button not found, attempting to proceed anyway');
+        await page.waitForTimeout(5000);
+      }
     }
     
     // Check if login was successful
@@ -87,7 +111,7 @@ async function updateNaukriProfile() {
     // Step 2: Navigate to profile
     log('Navigating to profile page...');
     await page.goto(NAUKRI_PROFILE_URL, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(8000);
     
     await page.screenshot({ path: path.join(logsDir, '04-profile-page.png') });
     
@@ -107,19 +131,31 @@ async function updateNaukriProfile() {
       const randomHeadline = await getRandomItem(headlines);
       log(`Selected headline: ${randomHeadline}`);
       
-      // Find headline input field
-      const headlineInput = page.locator('input[placeholder*="headline" i], input[name*="headline" i], input[id*="headline" i]').first();
+      // Find headline input field or edit button
+      const headlineInput = page.locator('input[placeholder*="headline" i], input[name*="headline" i], input[id*="headline" i], input[aria-label*="headline" i]').first();
+      
       if (await headlineInput.isVisible()) {
         await headlineInput.fill(randomHeadline);
         log('Headline updated');
+        
+        // Look for save button
+        const saveBtn = page.getByRole('button', { name: /save|update|confirm/i }).first();
+        if (await saveBtn.isVisible()) {
+          await saveBtn.click();
+          await page.waitForTimeout(3000);
+          log('Headline saved');
+        }
       } else {
         log('Headline input not found, trying to find edit button');
         // Look for edit button for headline section
-        const editButton = page.locator('button:has-text("Edit"), a:has-text("Edit"), span:has-text("Edit")').filter({ hasText: /headline/i }).first();
+        const editButton = page.getByText(/edit/i, { exact: false }).first();
         if (await editButton.isVisible()) {
           await editButton.click();
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(3000);
           await headlineInput.fill(randomHeadline);
+          log('Headline updated via edit button');
+        } else {
+          log('Could not find headline section');
         }
       }
     } catch (error) {
@@ -130,18 +166,18 @@ async function updateNaukriProfile() {
     log('Updating CV from CV bank...');
     try {
       // Find CV/Resume section
-      const cvSection = page.locator('a:has-text("CV"), a:has-text("Resume"), button:has-text("Upload"), button:has-text("Update")').first();
+      const cvSection = page.getByText(/cv|resume/i).first();
       
       if (await cvSection.isVisible()) {
         await cvSection.click();
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(5000);
         log('CV section accessed');
         
         // Look for CV bank option
-        const cvBankOption = page.locator('a:has-text("CV Bank"), button:has-text("CV Bank"), span:has-text("CV Bank")').first();
+        const cvBankOption = page.getByText(/cv bank/i).first();
         if (await cvBankOption.isVisible()) {
           await cvBankOption.click();
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(5000);
           log('CV Bank accessed');
           
           // Select a random CV
@@ -155,14 +191,18 @@ async function updateNaukriProfile() {
             log(`Selected CV option ${randomIndex + 1} of ${count}`);
             
             // Save/Update
-            const saveButton = page.locator('button:has-text("Save"), button:has-text("Update"), input[type="submit"]').first();
+            const saveButton = page.getByRole('button', { name: /save|update|confirm/i }).first();
             if (await saveButton.isVisible()) {
               await saveButton.click();
-              await page.waitForTimeout(3000);
+              await page.waitForTimeout(5000);
               log('CV selection saved');
             }
           }
+        } else {
+          log('CV Bank option not found');
         }
+      } else {
+        log('CV section not found');
       }
     } catch (error) {
       log(`Error updating CV: ${error.message}`);
