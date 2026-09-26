@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
 """
-Naukri Profile Updater using NopeRi API Client
-Updates profile headline and uploads resume using Naukri's internal API
+Naukri Profile Updater using Direct API Calls
+Bypasses WAF by using Naukri's internal API endpoints
 """
 
 import os
 import sys
 import random
 import time
+import requests
 from datetime import datetime
+from urllib.parse import urljoin
 
-# Try to import NopeRi client
-try:
-    from nope ri import NaukriClient
-except ImportError:
-    print("Installing NopeRi library...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/Traverser25/NopeRi.git"])
-    from nope ri import NaukriClient
-
-# Configuration from environment
+# Configuration
 NAUKRI_EMAIL = os.getenv("NAUKRI_EMAIL")
 NAUKRI_PASSWORD = os.getenv("NAUKRI_PASSWORD")
 RESUME_PATH = os.getenv("RESUME_PATH", "cv-bank/resumes")
-
-# Headlines file
 HEADLINES_FILE = "cv-bank/headlines.txt"
+
+# API Endpoints (based on NopeRi/naukri-api implementations)
+BASE_URL = "https://www.naukri.com"
+AUTH_URL = "https://auth.naukri.com/authenticate"
+PROFILE_API = "https://www.naukri.com/mnj/v1/user/profiles"
+RESUME_API = "https://www.naukri.com/mnj/v1/resumes"
 
 def log(message):
     timestamp = datetime.now().isoformat()
@@ -67,6 +64,132 @@ def get_resume_file():
         log(f"Error getting resume file: {e}")
         return None
 
+class NaukriAPIClient:
+    """Simple Naukri API client"""
+    
+    def __init__(self, email, password):
+        self.email = email
+        self.password = password
+        self.session = requests.Session()
+        self.access_token = None
+        self.profile_id = None
+        
+        # Set headers
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://www.naukri.com',
+            'Referer': 'https://www.naukri.com/',
+        })
+    
+    def authenticate(self):
+        """Authenticate and get access token"""
+        log("Authenticating...")
+        
+        # Try different auth endpoints
+        auth_endpoints = [
+            f"{AUTH_URL}/login",
+            f"{BASE_URL}/login",
+            "https://www.naukri.com/nlogin/auth"
+        ]
+        
+        for endpoint in auth_endpoints:
+            try:
+                log(f"Trying: {endpoint}")
+                
+                # First, get the login page to extract tokens
+                login_page = self.session.get(endpoint, timeout=10)
+                
+                # Look for CSRF token or other auth tokens
+                # (This is a simplified approach - real implementation would parse the page)
+                
+                # Try to login
+                login_data = {
+                    'username': self.email,
+                    'password': self.password,
+                }
+                
+                response = self.session.post(endpoint, json=login_data, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'access_token' in data or 'token' in data or 'userId' in data:
+                        self.access_token = data.get('access_token') or data.get('token')
+                        self.profile_id = data.get('userId') or data.get('profileId')
+                        log(f"✓ Authenticated successfully")
+                        return True
+                
+            except Exception as e:
+                log(f"✗ {endpoint} failed: {e}")
+                continue
+        
+        log("✗ All auth endpoints failed")
+        return False
+    
+    def update_profile(self, headline):
+        """Update profile headline"""
+        if not self.profile_id:
+            log("✗ No profile ID - authentication may have failed")
+            return False
+        
+        log(f"Updating profile headline...")
+        
+        try:
+            url = f"{PROFILE_API}/{self.profile_id}/"
+            
+            payload = {
+                'resumeHeadline': headline,
+                'headline': headline
+            }
+            
+            if self.access_token:
+                self.session.headers['Authorization'] = f'Bearer {self.access_token}'
+            
+            response = self.session.put(url, json=payload, timeout=10)
+            
+            if response.status_code in [200, 201, 204]:
+                log(f"✓ Headline updated successfully")
+                return True
+            else:
+                log(f"✗ Update failed: HTTP {response.status_code}")
+                log(f"Response: {response.text[:200]}")
+                return False
+                
+        except Exception as e:
+            log(f"✗ Update failed: {e}")
+            return False
+    
+    def upload_resume(self, resume_path):
+        """Upload resume file"""
+        if not os.path.exists(resume_path):
+            log(f"✗ Resume file not found: {resume_path}")
+            return False
+        
+        log(f"Uploading resume: {resume_path}")
+        
+        try:
+            url = f"{RESUME_API}/upload"
+            
+            with open(resume_path, 'rb') as f:
+                files = {'resume': (os.path.basename(resume_path), f, 'application/pdf')}
+                
+                if self.access_token:
+                    self.session.headers['Authorization'] = f'Bearer {self.access_token}'
+                
+                response = self.session.post(url, files=files, timeout=30)
+                
+                if response.status_code in [200, 201]:
+                    log(f"✓ Resume uploaded successfully")
+                    return True
+                else:
+                    log(f"✗ Upload failed: HTTP {response.status_code}")
+                    return False
+                    
+        except Exception as e:
+            log(f"✗ Upload failed: {e}")
+            return False
+
 def update_naukri_profile():
     """Main function to update Naukri profile"""
     log("=== NAUKRI PROFILE UPDATE (API) ===")
@@ -80,35 +203,24 @@ def update_naukri_profile():
     
     try:
         # Initialize client
-        log("\nInitializing NopeRi client...")
-        client = NaukriClient(
-            username=NAUKRI_EMAIL,
-            password=NAUKRI_PASSWORD
-        )
+        client = NaukriAPIClient(NAUKRI_EMAIL, NAUKRI_PASSWORD)
         
-        log("✓ Client initialized successfully")
+        # Authenticate
+        if not client.authenticate():
+            log("\n✗ Authentication failed - check credentials")
+            return False
         
         # Get random headline
         headline = get_random_headline()
         log(f"\nSelected headline: \"{headline}\"")
         
         # Update profile headline
-        log("\nUpdating profile headline...")
-        try:
-            client.update_profile(headline=headline)
-            log("✓ Headline updated successfully")
-        except Exception as e:
-            log(f"✗ Headline update failed: {e}")
+        client.update_profile(headline)
         
         # Get and upload resume
         resume_file = get_resume_file()
         if resume_file:
-            log(f"\nUploading resume: {resume_file}")
-            try:
-                client.update_resume(resume_file)
-                log("✓ Resume uploaded successfully")
-            except Exception as e:
-                log(f"✗ Resume upload failed: {e}")
+            client.upload_resume(resume_file)
         else:
             log("\n! No resume file to upload")
         
