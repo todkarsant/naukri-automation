@@ -59,7 +59,7 @@ def update_profile():
                 page.wait_for_timeout(8000)
                 
                 # Check if blocked by WAF
-                page_title = await page.title()
+                page_title = page.title()
                 if "Access Denied" in page_title or "edgesuite" in page_title.lower():
                     log("✗ BLOCKED BY WAF - Naukri is blocking cloud IPs")
                     browser.close()
@@ -81,8 +81,8 @@ def update_profile():
                     for selector in selectors:
                         try:
                             field = page.locator(selector).first()
-                            if await field.is_visible():
-                                await field.fill(NAUKRI_EMAIL)
+                            if field.is_visible():
+                                field.fill(NAUKRI_EMAIL)
                                 log(f"✓ Filled email using: {selector}")
                                 break
                         except:
@@ -90,14 +90,14 @@ def update_profile():
                     
                     # Password
                     password_field = page.locator('input[type="password"]').first()
-                    if await password_field.is_visible():
-                        await password_field.fill(NAUKRI_PASSWORD)
+                    if password_field.is_visible():
+                        password_field.fill(NAUKRI_PASSWORD)
                         log("✓ Filled password")
                     
                     # Submit
                     submit_btn = page.locator('button[type="submit"], input[type="submit"]').first()
-                    if await submit_btn.is_visible():
-                        await submit_btn.click()
+                    if submit_btn.is_visible():
+                        submit_btn.click()
                         log("✓ Login submitted")
                         page.wait_for_timeout(15000)
                     
@@ -117,13 +117,13 @@ def update_profile():
                 
                 try:
                     headline_input = page.locator('input[placeholder*="headline" i], input[name*="headline" i]').first()
-                    if await headline_input.is_visible():
-                        await headline_input.fill(headline)
+                    if headline_input.is_visible():
+                        headline_input.fill(headline)
                         log("✓ Headline updated")
                         
                         save_btn = page.locator('button:has-text("Save"), input[value="Save"]').first()
-                        if await save_btn.is_visible():
-                            await save_btn.click()
+                        if save_btn.is_visible():
+                            save_btn.click()
                             page.wait_for_timeout(5000)
                             log("✓ Saved")
                     else:
