@@ -29,173 +29,167 @@ async function updateNaukriProfile() {
   
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   });
   
   const page = await context.newPage();
   
   try {
-    // Step 1: Login
-    log('Navigating to Naukri login...');
+    // STEP 1: LOGIN
+    log('Going to Naukri login...');
     await page.goto(NAUKRI_LOGIN_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(10000);
     await page.screenshot({ path: path.join(logsDir, '01-login.png') });
     
-    log('Filling login form...');
+    log('Filling credentials...');
     
-    // Find ALL inputs and try to identify email/username field
-    const allInputs = await page.locator('input').all();
-    log(`Found ${allInputs.length} input elements`);
+    // Get ALL inputs
+    const inputs = await page.$$eval('input', els => 
+      els.map((el, i) => ({
+        index: i,
+        type: el.type,
+        name: el.name,
+        id: el.id,
+        placeholder: el.placeholder
+      }))
+    );
     
-    for (const input of allInputs) {
-      try {
-        const type = await input.getAttribute('type');
-        const name = await input.getAttribute('name');
-        const id = await input.getAttribute('id');
-        const placeholder = await input.getAttribute('placeholder');
-        
-        if ((type === 'text' || type === 'email' || !type) && 
-            (name && name.toLowerCase().includes('user') || 
-             name && name.toLowerCase().includes('email') ||
-             name && name.toLowerCase().includes('login') ||
-             placeholder && placeholder.toLowerCase().includes('email'))) {
-          await input.fill(EMAIL);
-          log(`Filled email in input: name=${name}, id=${id}`);
-          break;
-        }
-      } catch (e) {
-        // Skip if can't get attributes
+    log(`Found ${inputs.length} inputs`);
+    
+    // Find email/username input
+    for (const input of inputs) {
+      const type = input.type || 'text';
+      const name = (input.name || '').toLowerCase();
+      const id = (input.id || '').toLowerCase();
+      const placeholder = (input.placeholder || '').toLowerCase();
+      
+      if ((type === 'text' || type === 'email' || type === '') &&
+          (name.includes('user') || name.includes('email') || name.includes('login') ||
+           id.includes('user') || id.includes('email') ||
+           placeholder.includes('email'))) {
+        await page.locator(`input:nth-of-type(${input.index + 1})`).fill(EMAIL);
+        log(`Filled email in input[${input.index}]: name=${input.name}, id=${input.id}`);
+        break;
       }
     }
     
-    // Find password field
-    const passwordInputs = await page.locator('input[type="password"]').all();
-    if (passwordInputs.length > 0) {
-      await passwordInputs[0].fill(PASSWORD);
-      log('Filled password');
+    // Find password input
+    for (const input of inputs) {
+      if (input.type === 'password') {
+        await page.locator(`input:nth-of-type(${input.index + 1})`).fill(PASSWORD);
+        log(`Filled password in input[${input.index}]`);
+        break;
+      }
     }
     
     await page.screenshot({ path: path.join(logsDir, '02-filled.png') });
     
-    // Find and click submit button
-    log('Looking for submit button...');
-    const allButtons = await page.locator('button, input[type="submit"], a.button').all();
-    log(`Found ${allButtons.length} button elements`);
+    // Get ALL buttons and clickable elements
+    const buttons = await page.$$eval('button, input[type="submit"], a.button, [role="button"]', els =>
+      els.map((el, i) => ({
+        index: i,
+        tag: el.tagName,
+        type: el.type,
+        text: (el.textContent || '').trim().toLowerCase(),
+        value: (el.value || '').toLowerCase()
+      }))
+    );
     
-    for (const button of allButtons) {
-      try {
-        const text = await button.textContent();
-        const value = await button.getAttribute('value');
-        const type = await button.getAttribute('type');
-        
-        if ((text && text.toLowerCase().includes('login')) ||
-            (text && text.toLowerCase().includes('sign in')) ||
-            (value && value.toLowerCase().includes('login')) ||
-            type === 'submit') {
-          await button.click();
-          log(`Clicked button with text: ${text}, value: ${value}`);
+    log(`Found ${buttons.length} buttons`);
+    
+    // Find login button
+    for (const btn of buttons) {
+      if (btn.text.includes('login') || btn.text.includes('sign in') || btn.type === 'submit') {
+        try {
+          await page.locator(`button:nth-of-type(${btn.index + 1}), input[type="submit"]:nth-of-type(${btn.index + 1})`).click();
+          log(`Clicked button[${btn.index}]: ${btn.text}`);
           break;
+        } catch (e) {
+          log(`Failed to click button[${btn.index}]: ${e.message}`);
         }
-      } catch (e) {
-        // Skip if can't interact
       }
     }
     
-    await page.waitForTimeout(10000);
+    await page.waitForTimeout(12000);
     await page.screenshot({ path: path.join(logsDir, '03-after-login.png') });
     
-    // Step 2: Go to profile
-    log('Going to profile page...');
+    // STEP 2: PROFILE
+    log('Going to profile...');
     await page.goto(NAUKRI_PROFILE_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(10000);
+    await page.waitForTimeout(12000);
     await page.screenshot({ path: path.join(logsDir, '04-profile.png') });
     
-    // Step 3: Update headline
-    log('Attempting to update headline...');
+    // STEP 3: HEADLINE
+    log('Updating headline...');
     try {
-      // Read headlines
       const headlinesPath = path.join(__dirname, '..', 'cv-bank', 'headlines.txt');
-      let headlines = ['Software Builder | Full Stack Developer'];
+      let headlines = ['Software Builder'];
       
       if (fs.existsSync(headlinesPath)) {
-        const content = fs.readFileSync(headlinesPath, 'utf-8');
-        headlines = content.split('\n').filter(line => line.trim() !== '');
+        headlines = fs.readFileSync(headlinesPath, 'utf-8')
+          .split('\n').filter(l => l.trim());
       }
       
-      const randomHeadline = headlines[Math.floor(Math.random() * headlines.length)];
-      log(`Selected headline: ${randomHeadline}`);
+      const headline = headlines[Math.floor(Math.random() * headlines.length)];
+      log(`Selected: ${headline}`);
       
-      // Find all inputs and look for headline
-      const inputs = await page.locator('input').all();
-      for (const input of inputs) {
-        try {
-          const name = await input.getAttribute('name');
-          const id = await input.getAttribute('id');
-          const placeholder = await input.getAttribute('placeholder');
+      // Get all inputs on profile page
+      const profileInputs = await page.$$eval('input', els =>
+        els.map((el, i) => ({
+          index: i,
+          name: (el.name || '').toLowerCase(),
+          id: (el.id || '').toLowerCase(),
+          placeholder: (el.placeholder || '').toLowerCase()
+        }))
+      );
+      
+      for (const inp of profileInputs) {
+        if (inp.name.includes('headline') || inp.id.includes('headline') || inp.placeholder.includes('headline')) {
+          await page.locator(`input:nth-of-type(${inp.index + 1})`).fill(headline);
+          log(`Filled headline in input[${inp.index}]`);
           
-          if ((name && name.toLowerCase().includes('headline')) ||
-              (id && id.toLowerCase().includes('headline')) ||
-              (placeholder && placeholder.toLowerCase().includes('headline'))) {
-            await input.fill(randomHeadline);
-            log('Headline filled successfully');
-            
-            // Try to save
-            const saveButtons = await page.locator('button, input[type="submit"]').all();
-            for (const btn of saveButtons) {
-              try {
-                const btnText = await btn.textContent();
-                if (btnText && (btnText.toLowerCase().includes('save') || btnText.toLowerCase().includes('update'))) {
-                  await btn.click();
-                  log('Saved headline');
-                  break;
-                }
-              } catch (e) {}
+          // Click save
+          const saveBtns = await page.$$eval('button, input[type="submit"]', els =>
+            els.map((el, i) => ({ index: i, text: (el.textContent || '').toLowerCase() }))
+          );
+          
+          for (const sb of saveBtns) {
+            if (sb.text.includes('save') || sb.text.includes('update')) {
+              await page.locator(`button:nth-of-type(${sb.index + 1})`).click();
+              log('Saved headline');
+              break;
             }
-            break;
           }
-        } catch (e) {}
+          break;
+        }
       }
-    } catch (error) {
-      log(`Headline error: ${error.message}`);
+    } catch (e) {
+      log(`Headline error: ${e.message}`);
     }
     
-    // Step 4: Update CV
-    log('Attempting to update CV...');
+    // STEP 4: CV
+    log('Updating CV...');
     try {
-      // Find CV-related links/buttons
-      const allLinks = await page.locator('a').all();
-      for (const link of allLinks) {
-        try {
-          const text = await link.textContent();
-          if (text && (text.toLowerCase().includes('cv') || text.toLowerCase().includes('resume'))) {
-            await link.click();
-            log('Clicked CV/resume link');
-            await page.waitForTimeout(5000);
-            await page.screenshot({ path: path.join(logsDir, '05-cv-section.png') });
-            break;
-          }
-        } catch (e) {}
+      const links = await page.$$eval('a', els =>
+        els.map((el, i) => ({ index: i, text: (el.textContent || '').toLowerCase() }))
+      );
+      
+      for (const link of links) {
+        if (link.text.includes('cv') || link.text.includes('resume')) {
+          await page.locator(`a:nth-of-type(${link.index + 1})`).click();
+          log('Clicked CV link');
+          await page.waitForTimeout(6000);
+          break;
+        }
       }
       
-      // Look for CV bank
-      const allElements = await page.locator('*').all();
-      for (const el of allElements) {
-        try {
-          const text = await el.textContent();
-          if (text && text.toLowerCase().includes('cv bank')) {
-            await el.click();
-            log('Clicked CV Bank');
-            await page.waitForTimeout(5000);
-            break;
-          }
-        } catch (e) {}
-      }
-    } catch (error) {
-      log(`CV error: ${error.message}`);
+      await page.screenshot({ path: path.join(logsDir, '05-cv.png') });
+    } catch (e) {
+      log(`CV error: ${e.message}`);
     }
     
     await page.screenshot({ path: path.join(logsDir, '06-final.png') });
-    log('Update completed!');
+    log('Done!');
     
   } catch (error) {
     log(`ERROR: ${error.message}`);
@@ -208,11 +202,11 @@ async function updateNaukriProfile() {
 
 updateNaukriProfile()
   .then(() => {
-    log('Script completed successfully');
+    log('Success');
     process.exit(0);
   })
   .catch((error) => {
-    log(`Script failed: ${error.message}`);
+    log(`Failed: ${error.message}`);
     console.error(error);
     process.exit(1);
   });
