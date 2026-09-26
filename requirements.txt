@@ -1,0 +1,4 @@
+# Naukri Automation - All Dependencies
+playwright
+requests
+flask
